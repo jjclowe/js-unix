@@ -12,7 +12,7 @@ const volume = {
         dir1: {
           file3: "a file inside a dir"
         },
-        "linkedin.sh":`#!/bin/sh
+        "linkedin.sh": `#!/bin/sh
 # This is a comment!
 echo Hello World        # This is a comment, too!`
       }
@@ -25,7 +25,7 @@ echo Hello World        # This is a comment, too!`
       bin: {
         less: (os, args) => {
           function error(message) {
-            return {error: `less: ${message}`};
+            return { error: `less: ${message}` };
           }
 
           if (args.length < 2) return error("too few arguments");
@@ -33,9 +33,9 @@ echo Hello World        # This is a comment, too!`
 
           let filePath = os.resolvePath(args[1]);
 
-          if(filePath){
-            return {screen: os.readfile(filePath)};
-          }else{
+          if (filePath) {
+            return { screen: os.readfile(filePath) };
+          } else {
             return error("invalid path");
           }
         }

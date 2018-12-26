@@ -17,7 +17,7 @@ class os {
     this.path = ["home", this.username];
 
     this.env = {
-      PATH: [["usr","bin"],["bin"]]
+      PATH: [["usr", "bin"], ["bin"]]
     };
 
     // prepare response
@@ -96,12 +96,12 @@ class os {
 
   readfile(path) {
     const file = this.getVolumeObject(path);
-    if(!file){
-      return {error: `file '${path.join("/")}' not found`};
-    }else if(typeof file=='string'){
-      return {string: file};
-    }else{
-      return {error: `invalid file '${path.join("/")}'`};
+    if (!file) {
+      return { error: `file '${path.join("/")}' not found` };
+    } else if (typeof file == "string") {
+      return { string: file };
+    } else {
+      return { error: `invalid file '${path.join("/")}'` };
     }
   }
 
@@ -126,33 +126,33 @@ class os {
     } else if (this.fileExists([...this.path, input[0]])) {
       // item matching program name exists in current path
       let volumeObject = this.getVolumeObject([...this.path, input[0]]);
-      if(typeof volumeObject=='function'){
+      if (typeof volumeObject == "function") {
         // item is program
         returnObject.output = volumeObject(this, input);
       }
-    }else if(this.fileExists(this.resolvePath(input[0]))){
+    } else if (this.fileExists(this.resolvePath(input[0]))) {
       // item is a path to a file that exists
       let volumeObject = this.getVolumeObject(this.resolvePath(input[0]));
-      if(typeof volumeObject=='function'){
+      if (typeof volumeObject == "function") {
         // item is a path to a program that exists
         returnObject.output = volumeObject(this, input);
       }
     } else {
-      let {PATH}=this.env;
+      let { PATH } = this.env;
       var volumeObject = null;
 
       PATH.forEach(path => {
-        if(typeof this.getVolumeObject([...path, input[0]])=='function'){
+        if (typeof this.getVolumeObject([...path, input[0]]) == "function") {
           // program found in an env PATH
           volumeObject = this.getVolumeObject([...path, input[0]]);
         }
       });
 
-      if(volumeObject){
+      if (volumeObject) {
         returnObject.output = volumeObject(this, input);
-      }else{
+      } else {
         // program not found
-        returnObject.output = {error: `command '${input[0]}' not found`};
+        returnObject.output = { error: `command '${input[0]}' not found` };
       }
     }
 
@@ -163,25 +163,25 @@ class os {
   }
 
   _exit(args) {
-    return {action: exit};
+    return { action: exit };
   }
 
   _ls(args) {
     const pointer = this.getVolumeObject(this.path);
     let items = [];
-    for (let i in pointer){
-      if(this.isDir([...this.path, i])){
-        items.push({type:'dir', name:i});
-      }else{
-        items.push({type:'file', name:i});
+    for (let i in pointer) {
+      if (this.isDir([...this.path, i])) {
+        items.push({ type: "dir", name: i });
+      } else {
+        items.push({ type: "file", name: i });
       }
     }
-    return {list: items};
+    return { list: items };
   }
 
   _cd(args) {
     function error(message) {
-      return {error: `cd: ${message}`};
+      return { error: `cd: ${message}` };
     }
 
     let newPath = null;
@@ -210,7 +210,7 @@ class os {
 
   _cp(args) {
     function error(message) {
-      return {error: `cp: ${message}`};
+      return { error: `cp: ${message}` };
     }
 
     if (args.length === 1) return error("too few arguments");
