@@ -6,6 +6,9 @@ class os {
     this.username = null;
     this.path = [];
     this.isRoot = false;
+    this.env = {
+      PATH: []
+    };
   }
 
   boot(callback) {
@@ -13,13 +16,17 @@ class os {
     this.isRoot = this.username == "root";
     this.path = ["home", this.username];
 
-    // prepare output
-    let output = {
-      prefix: this.getPrefix(),
-      buffer: this.readfile(["tmp", "welcome-message"])
+    this.env = {
+      PATH: [["usr","bin"],["bin"]]
     };
 
-    callback(output);
+    // prepare response
+    let response = {
+      prefix: this.getPrefix(),
+      output: this.readfile(["tmp", "welcome-message"])
+    };
+
+    callback(response);
   }
 
   getPrefix() {
@@ -89,12 +96,18 @@ class os {
 
   readfile(path) {
     const file = this.getVolumeObject(path);
-    return file ? file : `file '${path.join("/")}' not found`;
+    if(!file){
+      return {error: `file '${path.join("/")}' not found`};
+    }else if(typeof file=='string'){
+      return {string: file};
+    }else{
+      return {error: `invalid file '${path.join("/")}'`};
+    }
   }
 
   exec(rawInput, callback) {
     const input = rawInput.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
-    let output = {};
+    let returnObject = {};
 
     // remove quotes
     for (let i = 0; i < input.length; i++) {
@@ -105,46 +118,70 @@ class os {
       }
     }
 
-    console.log("#");
-    console.log();
-    console.log("#");
-
     if (input[0] === undefined) {
       // empty instruction
     } else if (this["_" + input[0]]) {
       // native program exists
-      output.buffer = this["_" + input[0]](input);
+      returnObject.output = this["_" + input[0]](input);
     } else if (this.fileExists([...this.path, input[0]])) {
       // item matching program name exists in current path
-      // if(matching path is function){
-
-      //}
-      console.log("program in this path");
+      let volumeObject = this.getVolumeObject([...this.path, input[0]]);
+      if(typeof volumeObject=='function'){
+        // item is program
+        returnObject.output = volumeObject(this, input);
+      }
+    }else if(this.fileExists(this.resolvePath(input[0]))){
+      // item is a path to a file that exists
+      let volumeObject = this.getVolumeObject(this.resolvePath(input[0]));
+      if(typeof volumeObject=='function'){
+        // item is a path to a program that exists
+        returnObject.output = volumeObject(this, input);
+      }
     } else {
-      // program not found
-      output.buffer = "command not found";
+      let {PATH}=this.env;
+      var volumeObject = null;
+
+      PATH.forEach(path => {
+        if(typeof this.getVolumeObject([...path, input[0]])=='function'){
+          // program found in an env PATH
+          volumeObject = this.getVolumeObject([...path, input[0]]);
+        }
+      });
+
+      if(volumeObject){
+        returnObject.output = volumeObject(this, input);
+      }else{
+        // program not found
+        returnObject.output = {error: `command '${input[0]}' not found`};
+      }
     }
 
-    output.input = input;
-    output.prefix = this.getPrefix();
+    returnObject.input = input;
+    returnObject.prefix = this.getPrefix();
 
-    callback(output);
+    callback(returnObject);
   }
 
   _exit(args) {
-    return "!exit";
+    return {action: exit};
   }
 
   _ls(args) {
     const pointer = this.getVolumeObject(this.path);
     let items = [];
-    for (let i in pointer) items.push(i);
-    return items.join("\t");
+    for (let i in pointer){
+      if(this.isDir([...this.path, i])){
+        items.push({type:'dir', name:i});
+      }else{
+        items.push({type:'file', name:i});
+      }
+    }
+    return {list: items};
   }
 
   _cd(args) {
     function error(message) {
-      return `cd: ${message}`;
+      return {error: `cd: ${message}`};
     }
 
     let newPath = null;
@@ -173,7 +210,7 @@ class os {
 
   _cp(args) {
     function error(message) {
-      return `cp: ${message}`;
+      return {error: `cp: ${message}`};
     }
 
     if (args.length === 1) return error("too few arguments");

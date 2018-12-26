@@ -11,18 +11,18 @@ const rl = readline.createInterface({
 
 nextline = prefix => {
   rl.question(prefix, input => {
-    os1.exec(input, function(output) {
-      if (output.buffer == "!exit") {
+    os1.exec(input, function(response) {
+      if (response.output == "!exit") {
         rl.close();
       } else {
-        if (output.buffer) console.log(output.buffer);
-        nextline(output.prefix);
+        if (response.output) console.log(response.output);
+        nextline(response.prefix);
       }
     });
   });
 };
 
-os1.boot(output => {
-  console.log(output.buffer);
-  nextline(output.prefix);
+os1.boot(response => {
+  console.log(response.output);
+  nextline(response.prefix);
 });
