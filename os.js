@@ -6,9 +6,13 @@ class os {
     this.username = null;
     this.path = [];
     this.isRoot = false;
+    this.activeProgram = null;
     this.env = {
       PATH: []
     };
+
+    this.width = options.width;
+    this.height = options.height;
   }
 
   boot(callback) {
@@ -22,11 +26,44 @@ class os {
 
     // prepare response
     let response = {
-      prefix: this.getPrefix(),
-      output: this.readfile(["tmp", "welcome-message"])
+      output: { string: this.readfile(["tmp", "welcome-message"]) },
+      prompt: this.getPrefix()
     };
 
     callback(response);
+  }
+
+  getLinesFromString(string, startLine, lineCount) {
+    const { width } = this;
+    var lines = [];
+    var buffer = string.slice();
+
+    if (startLine === undefined) startLine = 0;
+
+    function extractNextLine() {
+      let nextLine = buffer.substr(0, width);
+
+      if (nextLine.indexOf("\n") > -1) {
+        nextLine = nextLine.substr(0, nextLine.indexOf("\n"));
+        buffer = buffer.substr(nextLine.length + 1);
+      } else {
+        nextLine = nextLine.substr(0, width);
+        buffer = buffer.substr(nextLine.length);
+      }
+
+      return nextLine;
+    }
+
+    do {
+      lines.push(extractNextLine(buffer));
+    } while (buffer.length);
+
+    if (lineCount === undefined) lineCount = lines.length;
+
+    return {
+      lineCount: lines.length,
+      lines: lines.slice(startLine, startLine + lineCount)
+    };
   }
 
   getPrefix() {
@@ -99,71 +136,90 @@ class os {
     if (!file) {
       return { error: `file '${path.join("/")}' not found` };
     } else if (typeof file == "string") {
-      return { string: file };
+      return file;
     } else {
       return { error: `invalid file '${path.join("/")}'` };
     }
   }
 
-  exec(rawInput, callback) {
-    const input = rawInput.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || [];
-    let returnObject = {};
+  exec(lineInput, keyInput, callback) {
+    const args = lineInput ? lineInput.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) : [];
+    var volumeObject = null;
+    var responseObject = {};
 
     // remove quotes
-    for (let i = 0; i < input.length; i++) {
-      if (input[i].substr(0, 1) == '"' && input[i].substr(input[i].length - 1, 1) == '"') {
-        input[i] = input[i].substr(1, input[i].length - 2);
-      } else if (input[i].substr(0, 1) == "'" && input[i].substr(input[i].length - 1, 1) == "'") {
-        input[i] = input[i].substr(1, input[i].length - 2);
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].substr(0, 1) == '"' && args[i].substr(args[i].length - 1, 1) == '"') {
+        args[i] = args[i].substr(1, args[i].length - 2);
+      } else if (args[i].substr(0, 1) == "'" && args[i].substr(args[i].length - 1, 1) == "'") {
+        args[i] = args[i].substr(1, args[i].length - 2);
       }
     }
 
-    if (input[0] === undefined) {
-      // empty instruction
-    } else if (this["_" + input[0]]) {
-      // native program exists
-      returnObject.output = this["_" + input[0]](input);
-    } else if (this.fileExists([...this.path, input[0]])) {
-      // item matching program name exists in current path
-      let volumeObject = this.getVolumeObject([...this.path, input[0]]);
-      if (typeof volumeObject == "function") {
-        // item is program
-        returnObject.output = volumeObject(this, input);
-      }
-    } else if (this.fileExists(this.resolvePath(input[0]))) {
-      // item is a path to a file that exists
-      let volumeObject = this.getVolumeObject(this.resolvePath(input[0]));
-      if (typeof volumeObject == "function") {
-        // item is a path to a program that exists
-        returnObject.output = volumeObject(this, input);
-      }
+    if (this.activeProgram) {
+      // send input to last active program
+      volumeObject = this.activeProgram;
+      responseObject = this.activeProgram.continue(keyInput);
     } else {
-      let { PATH } = this.env;
-      var volumeObject = null;
-
-      PATH.forEach(path => {
-        if (typeof this.getVolumeObject([...path, input[0]]) == "function") {
-          // program found in an env PATH
-          volumeObject = this.getVolumeObject([...path, input[0]]);
+      if (args[0] === undefined) {
+        // empty instruction
+        responseObject = {
+          prompt: this.getPrefix()
+        };
+      } else if (this["_" + args[0]]) {
+        // native program exists
+        responseObject = this["_" + args[0]](args);
+      } else if (this.fileExists([...this.path, args[0]])) {
+        // item matching program name exists in current path
+        volumeObject = this.getVolumeObject([...this.path, args[0]]);
+        if (typeof volumeObject == "function") {
+          // item is program
+          volumeObject = new volumeObject(this);
+          responseObject = volumeObject.start(args);
         }
-      });
-
-      if (volumeObject) {
-        returnObject.output = volumeObject(this, input);
+      } else if (this.fileExists(this.resolvePath(args[0]))) {
+        // item is a path to a file that exists
+        volumeObject = this.getVolumeObject(this.resolvePath(args[0]));
+        if (typeof volumeObject == "function") {
+          // item is a path to a program that exists
+          volumeObject = new volumeObject(this);
+          responseObject = volumeObject.start(args);
+        }
       } else {
-        // program not found
-        returnObject.output = { error: `command '${input[0]}' not found` };
+        let { PATH } = this.env;
+
+        PATH.forEach(path => {
+          if (typeof this.getVolumeObject([...path, args[0]]) == "function") {
+            // program found in an env PATH
+            volumeObject = this.getVolumeObject([...path, args[0]]);
+          }
+        });
+
+        if (volumeObject) {
+          volumeObject = new volumeObject(this);
+          responseObject = volumeObject.start(args);
+        } else {
+          // program not found
+          responseObject = {
+            error: `command '${args[0]}' not found`,
+            prompt: this.getPrefix()
+          };
+        }
       }
     }
 
-    returnObject.input = input;
-    returnObject.prefix = this.getPrefix();
+    if (responseObject.activeProgram) {
+      this.activeProgram = volumeObject;
+      responseObject.activeProgram = volumeObject;
+    } else {
+      this.activeProgram = null;
+    }
 
-    callback(returnObject);
+    callback({ lineInput: args, ...responseObject });
   }
 
   _exit(args) {
-    return { action: exit };
+    return { action: "exit", output: { string: "Goodbye." } };
   }
 
   _ls(args) {
@@ -176,13 +232,21 @@ class os {
         items.push({ type: "file", name: i });
       }
     }
-    return { list: items };
+    return {
+      output: {
+        list: items
+      },
+      prompt: this.getPrefix()
+    };
   }
 
   _cd(args) {
-    function error(message) {
-      return { error: `cd: ${message}` };
-    }
+    const error = message => {
+      return {
+        error: `cd: ${message}`,
+        prompt: this.getPrefix()
+      };
+    };
 
     let newPath = null;
 
@@ -201,17 +265,23 @@ class os {
     // set new path
     if (!newPath) {
       return error(`invalid path`);
-    } else if (this.isDir(newPath)) {
-      this.path = newPath;
-    } else {
+    } else if (!this.isDir(newPath)) {
       return error(`'${newPath[newPath.length - 1]}' is not a directory`);
+    } else {
+      this.path = newPath;
+      return {
+        prompt: this.getPrefix()
+      };
     }
   }
 
   _cp(args) {
-    function error(message) {
-      return { error: `cp: ${message}` };
-    }
+    const error = message => {
+      return {
+        error: `cp: ${message}`,
+        prompt: this.getPrefix()
+      };
+    };
 
     if (args.length === 1) return error("too few arguments");
     if (args.length === 2) return error(`missing destination file operand after ‘${args[1]}’`);
@@ -225,7 +295,12 @@ class os {
 
       if (!this.fileExists(file1)) return error(`file ${file1[file1.length - 1]} does not exist`);
 
-      return `// copying '${args[1]}' to '${args[2]}'`;
+      return {
+        output: {
+          string: `// copying '${args[1]}' to '${args[2]}'`
+        },
+        prompt: this.getPrefix()
+      };
     }
   }
 }
